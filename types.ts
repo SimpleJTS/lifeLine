@@ -19,6 +19,10 @@ export interface UserInput {
   modelName: string;   // 使用的模型名称
   apiBaseUrl: string;
   apiKey: string;
+  useCustomApi: boolean;
+
+  authEmail?: string;
+  authPassword?: string;
 }
 
 export interface KLinePoint {
@@ -70,4 +74,17 @@ export interface AnalysisData {
 export interface LifeDestinyResult {
   chartData: KLinePoint[];
   analysis: AnalysisData;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  points: number;
+}
+
+export interface HistoryListItem {
+  id: string;
+  createdAt: string;
+  cost: number;
+  summary: string;
 }

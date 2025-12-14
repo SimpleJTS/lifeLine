@@ -1,170 +1,144 @@
 
-import { UserInput, LifeDestinyResult, Gender } from "../types";
-import { BAZI_SYSTEM_INSTRUCTION } from "../constants";
+import { UserInput, LifeDestinyResult } from "../types";
 
-// Helper to determine stem polarity
-const getStemPolarity = (pillar: string): 'YANG' | 'YIN' => {
-  if (!pillar) return 'YANG'; // default
-  const firstChar = pillar.trim().charAt(0);
-  const yangStems = ['甲', '丙', '戊', '庚', '壬'];
-  const yinStems = ['乙', '丁', '己', '辛', '癸'];
-  
-  if (yangStems.includes(firstChar)) return 'YANG';
-  if (yinStems.includes(firstChar)) return 'YIN';
-  return 'YANG'; // fallback
-};
+export interface AnalysisResponse {
+  result: LifeDestinyResult;
+  isGuest: boolean;
+  user: { id: string; email: string; points: number } | null;
+  cost: number;
+}
 
-export const generateLifeAnalysis = async (input: UserInput): Promise<LifeDestinyResult> => {
-  
-  const { apiKey, apiBaseUrl, modelName } = input;
+export interface ProgressCallback {
+  (message: string): void;
+}
 
-  // FIX: Trim whitespace which causes header errors if copied with newlines
-  const cleanApiKey = apiKey ? apiKey.trim() : "";
-  const cleanBaseUrl = apiBaseUrl ? apiBaseUrl.trim().replace(/\/+$/, "") : "";
-  const targetModel = modelName && modelName.trim() ? modelName.trim() : "gemini-3-pro-preview";
+/**
+ * 使用SSE流式获取分析结果，提供实时进度反馈
+ */
+export const generateLifeAnalysisWithProgress = async (
+  input: UserInput,
+  onProgress?: ProgressCallback
+): Promise<AnalysisResponse> => {
+  return new Promise((resolve, reject) => {
+    const eventSource = new EventSource('/api/analyze-stream?' + new URLSearchParams({
+      body: JSON.stringify(input)
+    }));
 
-  if (!cleanApiKey) {
-    throw new Error("请在表单中填写有效的 API Key");
-  }
-  
-  // Check for non-ASCII characters to prevent obscure 'Failed to construct Request' errors
-  // If user accidentally pastes Chinese characters or emojis in the API key field
-  if (/[^\x00-\x7F]/.test(cleanApiKey)) {
-    throw new Error("API Key 包含非法字符（如中文或全角符号），请检查输入是否正确。");
-  }
-
-  if (!cleanBaseUrl) {
-    throw new Error("请在表单中填写有效的 API Base URL");
-  }
-
-  const genderStr = input.gender === Gender.MALE ? '男 (乾造)' : '女 (坤造)';
-  const startAgeInt = parseInt(input.startAge) || 1;
-  
-  // Calculate Da Yun Direction accurately
-  const yearStemPolarity = getStemPolarity(input.yearPillar);
-  let isForward = false;
-
-  if (input.gender === Gender.MALE) {
-    isForward = yearStemPolarity === 'YANG';
-  } else {
-    isForward = yearStemPolarity === 'YIN';
-  }
-
-  const daYunDirectionStr = isForward ? '顺行 (Forward)' : '逆行 (Backward)';
-  
-  const directionExample = isForward 
-    ? "例如：第一步是【戊申】，第二步则是【己酉】（顺排）" 
-    : "例如：第一步是【戊申】，第二步则是【丁未】（逆排）";
-
-  const userPrompt = `
-    请根据以下**已经排好的**八字四柱和**指定的大运信息**进行分析。
-    
-    【基本信息】
-    性别：${genderStr}
-    姓名：${input.name || "未提供"}
-    出生年份：${input.birthYear}年 (阳历)
-    
-    【八字四柱】
-    年柱：${input.yearPillar} (天干属性：${yearStemPolarity === 'YANG' ? '阳' : '阴'})
-    月柱：${input.monthPillar}
-    日柱：${input.dayPillar}
-    时柱：${input.hourPillar}
-    
-    【大运核心参数】
-    1. 起运年龄：${input.startAge} 岁 (虚岁)。
-    2. 第一步大运：${input.firstDaYun}。
-    3. **排序方向**：${daYunDirectionStr}。
-    
-    【必须执行的算法 - 大运序列生成】
-    请严格按照以下步骤生成数据：
-    
-    1. **锁定第一步**：确认【${input.firstDaYun}】为第一步大运。
-    2. **计算序列**：根据六十甲子顺序和方向（${daYunDirectionStr}），推算出接下来的 9 步大运。
-       ${directionExample}
-    3. **填充 JSON**：
-       - Age 1 到 ${startAgeInt - 1}: daYun = "童限"
-       - Age ${startAgeInt} 到 ${startAgeInt + 9}: daYun = [第1步大运: ${input.firstDaYun}]
-       - Age ${startAgeInt + 10} 到 ${startAgeInt + 19}: daYun = [第2步大运]
-       - Age ${startAgeInt + 20} 到 ${startAgeInt + 29}: daYun = [第3步大运]
-       - ...以此类推直到 100 岁。
-    
-    【特别警告】
-    - **daYun 字段**：必须填大运干支（10年一变），**绝对不要**填流年干支。
-    - **ganZhi 字段**：填入该年份的**流年干支**（每年一变，例如 2024=甲辰，2025=乙巳）。
-    
-    任务：
-    1. 确认格局与喜忌。
-    2. 生成 **1-100 岁 (虚岁)** 的人生流年K线数据。
-    3. 在 \`reason\` 字段中提供流年详批。
-    4. 生成带评分的命理分析报告（包含性格分析、币圈交易分析、发展风水分析）。
-    
-    请严格按照系统指令生成 JSON 数据。
-  `;
-
-  try {
-    const response = await fetch(`${cleanBaseUrl}/chat/completions`, {
+    // 使用fetch + SSE手动处理
+    fetch('/api/analyze-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cleanApiKey}`
       },
-      body: JSON.stringify({
-        model: targetModel, 
-        messages: [
-          { role: "system", content: BAZI_SYSTEM_INSTRUCTION },
-          { role: "user", content: userPrompt }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.7
-      })
+      credentials: 'include',
+      body: JSON.stringify(input),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || '请求失败');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('无法读取响应流');
+      }
+
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 处理SSE消息
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          const eventMatch = line.match(/^event: (.+)$/m);
+          const dataMatch = line.match(/^data: (.+)$/m);
+
+          if (eventMatch && dataMatch) {
+            const event = eventMatch[1];
+            const data = JSON.parse(dataMatch[1]);
+
+            if (event === 'progress') {
+              onProgress?.(data.message);
+            } else if (event === 'complete') {
+              resolve({
+                result: data.result as LifeDestinyResult,
+                isGuest: data.isGuest || false,
+                user: data.user || null,
+                cost: data.cost || 0,
+              });
+              return;
+            } else if (event === 'error') {
+              reject(new Error(data.message || data.error || '分析失败'));
+              return;
+            }
+          }
+        }
+      }
+    }).catch(error => {
+      console.error("Stream Error:", error);
+      reject(error);
+    });
+  });
+};
+
+/**
+ * 兼容旧版本的非流式API（作为降级方案）
+ */
+export const generateLifeAnalysis = async (input: UserInput): Promise<AnalysisResponse> => {
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(input),
     });
 
+    const payload = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`API 请求失败: ${response.status} - ${errText}`);
+      if (payload?.error === 'LOGIN_REQUIRED') {
+        throw new Error('免费模式需要登录：请在表单里填写邮箱与密码（系统将自动注册/登录），或开启"自定义 API"。');
+      }
+      if (payload?.error === 'INVALID_CREDENTIALS') {
+        throw new Error('邮箱或密码错误。');
+      }
+      if (payload?.error === 'INVALID_INPUT') {
+        throw new Error('邮箱或密码不合法（密码至少 6 位）。');
+      }
+      if (payload?.error === 'INSUFFICIENT_POINTS') {
+        throw new Error(`点数不足（当前剩余 ${payload?.points ?? 0} 点），请充值或使用自定义 API。`);
+      }
+      if (payload?.error === 'MISSING_CUSTOM_API_CONFIG') {
+        throw new Error('请完整填写自定义 API 配置（Base URL / Key / 模型）。');
+      }
+      if (payload?.detail) {
+        throw new Error(`API 请求失败: ${payload.detail}`);
+      }
+      throw new Error(payload?.error || '命理测算过程中发生了意外错误，请重试。');
     }
 
-    const jsonResult = await response.json();
-    const content = jsonResult.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("模型未返回任何内容。");
-    }
-
-    // 解析 JSON
-    const data = JSON.parse(content);
-
-    // 简单校验数据完整性
-    if (!data.chartPoints || !Array.isArray(data.chartPoints)) {
-      throw new Error("模型返回的数据格式不正确（缺失 chartPoints）。");
+    if (!payload?.result) {
+      throw new Error('模型未返回任何内容。');
     }
 
     return {
-      chartData: data.chartPoints,
-      analysis: {
-        bazi: data.bazi || [],
-        summary: data.summary || "无摘要",
-        summaryScore: data.summaryScore || 5,
-        personality: data.personality || "无性格分析",
-        personalityScore: data.personalityScore || 5,
-        industry: data.industry || "无",
-        industryScore: data.industryScore || 5,
-        fengShui: data.fengShui || "建议多亲近自然，保持心境平和。",
-        fengShuiScore: data.fengShuiScore || 5,
-        wealth: data.wealth || "无",
-        wealthScore: data.wealthScore || 5,
-        marriage: data.marriage || "无",
-        marriageScore: data.marriageScore || 5,
-        health: data.health || "无",
-        healthScore: data.healthScore || 5,
-        family: data.family || "无",
-        familyScore: data.familyScore || 5,
-        // Crypto Fields
-        crypto: data.crypto || "暂无交易分析",
-        cryptoScore: data.cryptoScore || 5,
-        cryptoYear: data.cryptoYear || "待定",
-        cryptoStyle: data.cryptoStyle || "现货定投",
-      },
+      result: payload.result as LifeDestinyResult,
+      isGuest: payload.isGuest || false,
+      user: payload.user || null,
+      cost: payload.cost || 0,
     };
   } catch (error) {
     console.error("Gemini/OpenAI API Error:", error);

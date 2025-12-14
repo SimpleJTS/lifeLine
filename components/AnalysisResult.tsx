@@ -99,7 +99,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis }) => {
   return (
     <div className="w-full space-y-8 animate-fade-in-up">
       {/* Bazi Pillars */}
-      <div className="flex justify-center gap-2 md:gap-8 bg-gray-900 text-amber-50 p-6 rounded-xl shadow-lg overflow-x-auto">
+      <div className="flex justify-center gap-2 md:gap-8 bg-gray-900 text-amber-50 p-6 rounded-xl shadow-sm overflow-x-auto">
         {analysis.bazi.map((pillar, index) => {
           const labels = ['年柱', '月柱', '日柱', '时柱'];
           return (

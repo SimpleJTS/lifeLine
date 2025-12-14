@@ -23,7 +23,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     const data = payload[0].payload as KLinePoint;
     const isUp = data.close >= data.open;
     return (
-      <div className="bg-white/95 backdrop-blur-sm p-5 rounded-xl shadow-2xl border border-gray-200 z-50 w-[320px] md:w-[400px]">
+      <div className="bg-white/95 backdrop-blur-sm p-5 rounded-xl shadow-2xl border border-gray-200 z-50 w-[90vw] max-w-[320px] md:max-w-[400px]">
         {/* Header */}
         <div className="flex justify-between items-start mb-3 border-b border-gray-100 pb-2">
           <div>
@@ -164,11 +164,11 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
   const maxHigh = data.length > 0 ? Math.max(...data.map(d => d.high)) : 100;
 
   if (!data || data.length === 0) {
-    return <div className="h-[500px] flex items-center justify-center text-gray-400">无数据</div>;
+    return <div className="h-[350px] sm:h-[450px] lg:h-[500px] flex items-center justify-center text-gray-400">无数据</div>;
   }
 
   return (
-    <div className="w-full h-[600px] bg-white p-2 md:p-6 rounded-xl border border-gray-200 shadow-sm relative">
+    <div className="w-full h-[350px] sm:h-[450px] lg:h-[600px] bg-white p-2 md:p-6 rounded-xl border border-gray-200 shadow-sm relative">
       <div className="mb-6 flex justify-between items-center px-2">
         <h3 className="text-xl font-bold text-gray-800 font-serif-sc">人生流年大运K线图</h3>
         <div className="flex gap-4 text-xs font-medium">

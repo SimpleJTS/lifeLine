@@ -1,27 +1,40 @@
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
-  const env = loadEnv(mode, (process as any).cwd(), '');
-  
-  // Prioritize API_KEY, but fallback to VITE_API_KEY if the user followed standard Vite naming conventions
-  const apiKey = env.API_KEY || env.VITE_API_KEY;
-
   return {
-    plugins: [react()],
-    base: './', 
+    plugins: [
+      react(),
+      visualizer({
+        open: false,
+        filename: 'dist/stats.html',
+        gzipSize: true,
+        brotliSize: true
+      })
+    ],
+    base: './',
+    server: {
+      proxy: {
+        '/api': 'http://localhost:3000',
+      },
+    },
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'lunar': ['lunar-javascript'],
+            'recharts': ['recharts'],
+            'lucide': ['lucide-react'],
+            'react-vendor': ['react', 'react-dom']
+          }
+        }
+      },
+      chunkSizeWarningLimit: 600
     },
-    define: {
-      // Safely stringify the key. If it's missing, it will be an empty string, 
-      // which will be caught by the check in geminiService.ts
-      'process.env.API_KEY': JSON.stringify(apiKey || '')
-    }
   };
 });

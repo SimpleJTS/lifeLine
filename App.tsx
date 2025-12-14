@@ -1,24 +1,251 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import BaziForm from './components/BaziForm';
-import LifeKLineChart from './components/LifeKLineChart';
-import AnalysisResult from './components/AnalysisResult';
 import { UserInput, LifeDestinyResult } from './types';
 import { generateLifeAnalysis } from './services/geminiService';
 import { API_STATUS } from './constants';
-import { Sparkles, AlertCircle, BookOpen, Key, Download, Twitter, Printer, Trophy } from 'lucide-react';
+import { Sparkles, AlertCircle, Download, Twitter, Printer, Trophy, Loader2, User, Coins, LogOut, X, UserPlus } from 'lucide-react';
+
+// 懒加载重型组件
+const LifeKLineChart = lazy(() => import('./components/LifeKLineChart'));
+const AnalysisResult = lazy(() => import('./components/AnalysisResult'));
+const HelpGuide = lazy(() => import('./components/HelpGuide'));
+const HistoryList = lazy(() => import('./components/HistoryList'));
+
+// 加载中占位组件
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center py-12">
+    <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+  </div>
+);
+
+// 本地历史存储
+const HISTORY_STORAGE_KEY = 'lifekline_history';
+const MAX_LOCAL_HISTORY = 10;
+
+const saveLocalHistory = (input: UserInput, result: LifeDestinyResult) => {
+  try {
+    const data = localStorage.getItem(HISTORY_STORAGE_KEY);
+    const history = data ? JSON.parse(data) : [];
+    const newItem = {
+      id: `local_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      cost: 0,
+      input,
+      result,
+    };
+    const updated = [newItem, ...history].slice(0, MAX_LOCAL_HISTORY);
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.error('保存历史失败:', e);
+  }
+};
+
+// 注册弹窗组件
+const RegisterModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}> = ({ isOpen, onClose, onSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email.trim() || !password.trim()) {
+      setError('请填写邮箱和密码');
+      return;
+    }
+    if (password.length < 6) {
+      setError('密码至少6位');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 先尝试登录
+      let response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        // 登录失败，尝试注册
+        response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        });
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.error === 'EMAIL_EXISTS') {
+          setError('该邮箱已注册，请检查密码是否正确');
+        } else if (data.error === 'INVALID_CREDENTIALS') {
+          setError('密码错误');
+        } else {
+          setError(data.error || '注册失败，请重试');
+        }
+        return;
+      }
+
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError('网络错误，请重试');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-fade-in">
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <UserPlus className="w-5 h-5" />
+            <h3 className="font-bold text-lg">注册/登录以保存结果</h3>
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <p className="text-gray-600 text-sm">
+            注册后可以：保存分析结果、查看历史记录、获得更多测算次数
+          </p>
+
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">邮箱</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">密码</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="至少6位"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+            />
+          </div>
+
+          {error && (
+            <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                处理中...
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-4 h-4" />
+                注册/登录
+              </>
+            )}
+          </button>
+
+          <p className="text-xs text-gray-500 text-center">
+            已有账号会自动登录，新邮箱会自动注册
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LifeDestinyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentInput, setCurrentInput] = useState<UserInput | null>(null);
+  const [userInfo, setUserInfo] = useState<{ email: string; points: number } | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+
+  // 检查登录状态
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me', { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user) {
+            setIsLoggedIn(true);
+            setUserInfo({ email: data.user.email, points: data.user.points });
+          } else {
+            setIsLoggedIn(false);
+            setUserInfo(null);
+          }
+        } else {
+          setIsLoggedIn(false);
+          setUserInfo(null);
+        }
+      } catch {
+        setIsLoggedIn(false);
+        setUserInfo(null);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  // 刷新用户信息
+  const refreshUserInfo = async () => {
+    try {
+      const response = await fetch('/api/auth/me', { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.user) {
+          setUserInfo({ email: data.user.email, points: data.user.points });
+        }
+      }
+    } catch {
+      // 忽略错误
+    }
+  };
+
+  // 从历史记录加载结果
+  const handleHistorySelect = (historyResult: LifeDestinyResult, historyInput: UserInput) => {
+    setResult(historyResult);
+    setUserName(historyInput.name || '');
+    setCurrentInput(historyInput);
+    setError(null);
+  };
 
   const handleFormSubmit = async (data: UserInput) => {
     // 检查系统状态
     if (API_STATUS === 0) {
       setError("当前服务器正在维护，请择时再来");
-      // Removed scrollTo to keep user context
       return;
     }
 
@@ -26,10 +253,26 @@ const App: React.FC = () => {
     setError(null);
     setResult(null);
     setUserName(data.name || '');
+    setCurrentInput(data);
 
     try {
-      const analysis = await generateLifeAnalysis(data);
-      setResult(analysis);
+      const response = await generateLifeAnalysis(data);
+      setResult(response.result);
+      setIsGuest(response.isGuest);
+
+      // 更新用户状态
+      if (response.user) {
+        setIsLoggedIn(true);
+        setUserInfo({ email: response.user.email, points: response.user.points });
+      }
+
+      // 保存到本地历史
+      saveLocalHistory(data, response.result);
+
+      // 如果不是游客，刷新用户信息
+      if (!response.isGuest) {
+        refreshUserInfo();
+      }
     } catch (err: any) {
       setError(err.message || "命理测算过程中发生了意外错误，请重试。");
     } finally {
@@ -37,12 +280,34 @@ const App: React.FC = () => {
     }
   };
 
+  // 注册成功后的处理
+  const handleRegisterSuccess = () => {
+    setIsLoggedIn(true);
+    setIsGuest(false);
+    refreshUserInfo();
+  };
+
+  // 检查是否需要登录（游客模式下）
+  const requireLogin = (action: () => void) => {
+    if (isGuest && !isLoggedIn) {
+      setShowRegisterModal(true);
+    } else {
+      action();
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    requireLogin(() => window.print());
   };
 
   const handleSaveHtml = () => {
     if (!result) return;
+
+    // 游客需要登录才能保存
+    if (isGuest && !isLoggedIn) {
+      setShowRegisterModal(true);
+      return;
+    }
 
     // 获取当前精确时间 (到秒)
     const now = new Date();
@@ -133,9 +398,9 @@ const App: React.FC = () => {
     <div class="text-center border-b border-gray-200 pb-8 relative">
       <h1 class="text-4xl font-bold font-serif-sc text-gray-900 mb-2">${userName ? userName + '的' : ''}人生K线命理报告</h1>
       <p class="text-gray-500 text-sm">生成时间：${timeString} | 来源：人生K线 lifekline.0xsakura.me</p>
-      <a href="https://x.com/0xsakura666" target="_blank" class="absolute top-0 right-0 flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
+      <a href="https://x.com/laoshiline" target="_blank" class="absolute top-0 right-0 flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-twitter"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>
-        @0xSakura666
+        @laoshiline
       </a>
     </div>
 
@@ -163,9 +428,9 @@ const App: React.FC = () => {
     <!-- Footer -->
     <div class="text-center text-gray-400 text-sm py-12 border-t border-gray-200 mt-12 flex flex-col items-center gap-2">
       <p>&copy; ${now.getFullYear()} 人生K线项目 | 仅供娱乐与文化研究，请勿迷信</p>
-      <a href="https://x.com/0xsakura666" target="_blank" class="flex items-center gap-2 text-gray-500 hover:text-indigo-600 transition-colors">
+      <a href="https://x.com/laoshiline" target="_blank" class="flex items-center gap-2 text-gray-500 hover:text-indigo-600 transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"/></svg>
-        关注作者推特 @0xSakura666 获取更新
+        关注作者推特 @laoshiline 获取更新
       </a>
     </div>
 
@@ -194,8 +459,29 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center">
+      {/* 注册弹窗 */}
+      <RegisterModal
+        isOpen={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+        onSuccess={handleRegisterSuccess}
+      />
+
+      {/* 游客横幅 */}
+      {isGuest && result && !isLoggedIn && (
+        <div className="fixed top-0 left-0 right-0 z-40 bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 px-4 text-center text-sm font-medium no-print">
+          <span>🎁 您正在免费体验模式 - </span>
+          <button
+            onClick={() => setShowRegisterModal(true)}
+            className="underline font-bold hover:text-yellow-200"
+          >
+            注册账号
+          </button>
+          <span> 以保存结果并获得更多测算次数</span>
+        </div>
+      )}
+
       {/* Header */}
-      <header className="w-full bg-white border-b border-gray-200 py-6 sticky top-0 z-50 no-print">
+      <header className={`w-full bg-white border-b border-gray-200 py-6 sticky z-50 no-print ${isGuest && result && !isLoggedIn ? 'top-10' : 'top-0'}`}>
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-black text-white p-2 rounded-lg">
@@ -206,15 +492,37 @@ const App: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase tracking-widest">Life Destiny K-Line</p>
             </div>
           </div>
-          <div className="flex items-center gap-6">
-            <a 
-              href="https://x.com/0xsakura666" 
-              target="_blank" 
+          <div className="flex items-center gap-4">
+            {/* 用户状态显示 */}
+            {isLoggedIn && userInfo ? (
+              <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-2 rounded-full border border-indigo-100">
+                <div className="flex items-center gap-1.5 text-indigo-700">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm font-medium truncate max-w-[120px]">{userInfo.email}</span>
+                </div>
+                <div className="w-px h-4 bg-indigo-200"></div>
+                <div className="flex items-center gap-1.5 text-amber-600">
+                  <Coins className="w-4 h-4" />
+                  <span className="text-sm font-bold">{userInfo.points}</span>
+                  <span className="text-xs text-amber-500">点</span>
+                </div>
+              </div>
+            ) : (
+              <div className="hidden md:flex items-center gap-2 text-sm text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full">
+                <User className="w-4 h-4" />
+                <span>未登录</span>
+              </div>
+            )}
+
+            {/* Twitter 链接 */}
+            <a
+              href="https://x.com/laoshiline"
+              target="_blank"
               rel="noopener noreferrer"
               className="hidden md:flex items-center gap-2 text-sm text-gray-500 font-medium bg-gray-100 hover:bg-gray-200 hover:text-indigo-600 px-3 py-1.5 rounded-full transition-all"
             >
                <Twitter className="w-4 h-4" />
-               基于 AI 大模型驱动 | 推特 @0xSakura666
+               @laoshiline
             </a>
           </div>
         </div>
@@ -236,38 +544,10 @@ const App: React.FC = () => {
                 将您的一生运势绘制成类似股票行情的K线图。
                 助您发现人生牛市，规避风险熊市，把握关键转折点。
               </p>
-
-              {/* Tutorial Buttons Group */}
-              <div className="flex flex-row gap-4 w-full max-w-lg mb-4">
-                {/* Usage Tutorial */}
-                <a 
-                  href="https://jcnjmxofi1yl.feishu.cn/wiki/OPa4woxiBiFP9okQ9yWcbcXpnEw"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 bg-white px-4 py-3 rounded-xl shadow-sm border border-indigo-100 hover:border-indigo-500 hover:shadow-md transition-all transform hover:-translate-y-0.5 group"
-                >
-                  <div className="bg-indigo-50 p-1.5 rounded-full text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                    <BookOpen className="w-4 h-4" />
-                  </div>
-                  <span className="text-base font-bold text-gray-800 group-hover:text-indigo-700 transition-colors">使用教程</span>
-                </a>
-
-                {/* API Tutorial */}
-                <a 
-                  href="https://jcnjmxofi1yl.feishu.cn/wiki/JX0iwzoeqie3GEkJ8XQcMesan3c"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 bg-white px-4 py-3 rounded-xl shadow-sm border border-emerald-100 hover:border-emerald-500 hover:shadow-md transition-all transform hover:-translate-y-0.5 group"
-                >
-                  <div className="bg-emerald-50 p-1.5 rounded-full text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                    <Key className="w-4 h-4" />
-                  </div>
-                  <span className="text-base font-bold text-gray-800 group-hover:text-emerald-700 transition-colors">API教程</span>
-                </a>
-              </div>
             </div>
-            
-            <BaziForm onSubmit={handleFormSubmit} isLoading={loading} />
+
+            {/* 主表单 */}
+            <BaziForm onSubmit={handleFormSubmit} isLoading={loading} isLoggedIn={isLoggedIn} />
 
             {error && (
               <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg border border-red-100 max-w-md w-full animate-bounce-short">
@@ -275,6 +555,16 @@ const App: React.FC = () => {
                 <p className="text-sm font-bold">{error}</p>
               </div>
             )}
+
+            {/* 帮助指南 */}
+            <Suspense fallback={<LoadingFallback />}>
+              <HelpGuide />
+            </Suspense>
+
+            {/* 历史记录 */}
+            <Suspense fallback={<LoadingFallback />}>
+              <HistoryList onSelect={handleHistorySelect} isLoggedIn={isLoggedIn} />
+            </Suspense>
           </div>
         )}
 
@@ -331,13 +621,17 @@ const App: React.FC = () => {
                 <span className="text-red-600 font-bold">红色K线</span> 代表运势下跌（凶）。
                 <span className="text-red-500 font-bold">★</span> 标记为全盘最高运势点。
               </p>
-              <LifeKLineChart data={result.chartData} />
+              <Suspense fallback={<LoadingFallback />}>
+                <LifeKLineChart data={result.chartData} />
+              </Suspense>
             </section>
 
             {/* The Text Report */}
             {/* Added ID for HTML extraction */}
             <section id="analysis-result-container">
-               <AnalysisResult analysis={result.analysis} />
+              <Suspense fallback={<LoadingFallback />}>
+                <AnalysisResult analysis={result.analysis} />
+              </Suspense>
             </section>
             
             {/* Print Only: Detailed Table to substitute interactive tooltips */}
@@ -375,7 +669,7 @@ const App: React.FC = () => {
                
                <div className="mt-8 pt-4 border-t border-gray-200 flex justify-between items-center text-xs text-gray-500">
                   <span>生成时间：{new Date().toLocaleString()}</span>
-                  <span className="flex items-center gap-1"><Twitter className="w-3 h-3"/> @0xSakura666</span>
+                  <span className="flex items-center gap-1"><Twitter className="w-3 h-3"/> @laoshiline</span>
                </div>
             </div>
           </div>
@@ -386,9 +680,9 @@ const App: React.FC = () => {
       <footer className="w-full bg-gray-900 text-gray-400 py-8 mt-auto no-print">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm flex flex-col items-center gap-2">
           <p>&copy; {new Date().getFullYear()} 人生K线项目 | 仅供娱乐与文化研究，请勿迷信</p>
-          <a href="https://x.com/0xsakura666" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-white transition-colors">
+          <a href="https://x.com/laoshiline" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-white transition-colors">
             <Twitter className="w-3 h-3" />
-            @0xSakura666
+            @laoshiline
           </a>
         </div>
       </footer>
