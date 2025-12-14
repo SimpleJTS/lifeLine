@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { AnalysisData } from '../types';
-import { ScrollText, Briefcase, Coins, Heart, Activity, Users, Star, Info } from 'lucide-react';
+import { ScrollText, Briefcase, Coins, Heart, Activity, Users, Star, Info, Brain, Bitcoin, Compass } from 'lucide-react';
 
 interface AnalysisResultProps {
   analysis: AnalysisData;
@@ -31,8 +31,8 @@ const ScoreBar = ({ score }: { score: number }) => {
   );
 };
 
-const Card = ({ title, icon: Icon, content, score, colorClass }: any) => (
-  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col h-full">
+const Card = ({ title, icon: Icon, content, score, colorClass, extraBadges }: any) => (
+  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col h-full relative overflow-hidden">
     <div className={`flex items-center justify-between mb-3 ${colorClass}`}>
       <div className="flex items-center gap-2">
         <Icon className="w-5 h-5" />
@@ -40,6 +40,14 @@ const Card = ({ title, icon: Icon, content, score, colorClass }: any) => (
       </div>
       <Star className="w-4 h-4 opacity-50" />
     </div>
+    
+    {/* Extra Badges for Crypto */}
+    {extraBadges && (
+      <div className="flex flex-wrap gap-2 mb-3">
+        {extraBadges}
+      </div>
+    )}
+
     <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap flex-grow">
       {content}
     </div>
@@ -84,6 +92,33 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis }) => {
 
       {/* Grid for categorical analysis with Scores */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        {/* Crypto Analysis */}
+        <Card 
+          title="币圈交易运势" 
+          icon={Bitcoin} 
+          content={analysis.crypto} 
+          score={analysis.cryptoScore}
+          colorClass="text-amber-600"
+          extraBadges={
+            <>
+              <span className="px-2 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded border border-amber-200">
+                 🔥 暴富流年: {analysis.cryptoYear}
+              </span>
+              <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded border border-indigo-200">
+                 🎯 推荐: {analysis.cryptoStyle}
+              </span>
+            </>
+          }
+        />
+
+        <Card 
+          title="性格分析" 
+          icon={Brain} 
+          content={analysis.personality} 
+          score={analysis.personalityScore}
+          colorClass="text-teal-600" 
+        />
         <Card 
           title="事业行业" 
           icon={Briefcase} 
@@ -91,6 +126,16 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis }) => {
           score={analysis.industryScore}
           colorClass="text-blue-600" 
         />
+        
+        {/* Feng Shui Analysis - New Added */}
+        <Card 
+          title="发展风水" 
+          icon={Compass} 
+          content={analysis.fengShui} 
+          score={analysis.fengShuiScore}
+          colorClass="text-cyan-700" 
+        />
+
         <Card 
           title="财富层级" 
           icon={Coins} 
@@ -150,7 +195,7 @@ const AnalysisResult: React.FC<AnalysisResultProps> = ({ analysis }) => {
                 </li>
               </ul>
               <p className="text-xs text-black leading-relaxed border-t border-gray-100 pt-2 text-justify">
-                注：命运还受环境和个人选择影响，八字趋势不能完全代表真实人生，命理学不是玄学，而是帮助我们在人生列车上做出更好选择的哲学工具。一命二运三风水 四积阴德五读书 六名七相八敬神 九遇贵人十养生。
+                注：币圈交易风险极高，命理分析仅供娱乐与性格参考，不构成任何投资建议。请对自己的资金负责。
               </p>
             </div>
           }

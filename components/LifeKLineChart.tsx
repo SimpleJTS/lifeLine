@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   ComposedChart,
@@ -8,7 +9,8 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  Label
+  Label,
+  LabelList
 } from 'recharts';
 import { KLinePoint } from '../types';
 
@@ -73,7 +75,7 @@ const CandleShape = (props: any) => {
 
   const isUp = payload.close >= payload.open;
   const color = isUp ? '#22c55e' : '#ef4444'; // Green Up, Red Down
-  const strokeColor = isUp ? '#16a34a' : '#dc2626'; // Slightly darker for stroke
+  const strokeColor = isUp ? '#15803d' : '#b91c1c'; // Darker stroke for better visibility
   
   let highY = y;
   let lowY = y + height;
@@ -91,11 +93,13 @@ const CandleShape = (props: any) => {
   const center = x + width / 2;
 
   // Enforce minimum body height so flat doji candles are visible
-  const renderHeight = height < 1 ? 1 : height;
+  const renderHeight = height < 2 ? 2 : height;
 
   return (
     <g>
-      <line x1={center} y1={highY} x2={center} y2={lowY} stroke={strokeColor} strokeWidth={1.5} />
+      {/* Wick - made slightly thicker for visibility */}
+      <line x1={center} y1={highY} x2={center} y2={lowY} stroke={strokeColor} strokeWidth={2} />
+      {/* Body */}
       <rect 
         x={x} 
         y={y} 
@@ -103,8 +107,41 @@ const CandleShape = (props: any) => {
         height={renderHeight} 
         fill={color} 
         stroke={strokeColor}
-        strokeWidth={0.5}
+        strokeWidth={1}
+        rx={1} // Slight border radius
       />
+    </g>
+  );
+};
+
+// Custom Label Component for the Peak Star
+const PeakLabel = (props: any) => {
+  const { x, y, width, value, maxHigh } = props;
+  
+  // Only render if this value equals the global max high
+  if (value !== maxHigh) return null;
+
+  return (
+    <g>
+      {/* Red Star Icon */}
+      <path
+        d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+        transform={`translate(${x + width / 2 - 6}, ${y - 24}) scale(0.5)`}
+        fill="#ef4444" // Red-500
+        stroke="#b91c1c" // Red-700
+        strokeWidth="1"
+      />
+      {/* Score Text */}
+      <text 
+        x={x + width / 2} 
+        y={y - 28} 
+        fill="#b91c1c" 
+        fontSize={10} 
+        fontWeight="bold" 
+        textAnchor="middle"
+      >
+        {value}
+      </text>
     </g>
   );
 };
@@ -113,6 +150,8 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
   const transformedData = data.map(d => ({
     ...d,
     bodyRange: [Math.min(d.open, d.close), Math.max(d.open, d.close)],
+    // Helper for labelling: we label the 'high' point
+    labelPoint: d.high
   }));
 
   // Identify Da Yun change points to draw reference lines
@@ -120,6 +159,9 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
     if (i === 0) return true;
     return d.daYun !== data[i-1].daYun;
   });
+
+  // Calculate Global Max High for the peak label
+  const maxHigh = data.length > 0 ? Math.max(...data.map(d => d.high)) : 100;
 
   if (!data || data.length === 0) {
     return <div className="h-[500px] flex items-center justify-center text-gray-400">无数据</div>;
@@ -136,7 +178,7 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
       </div>
       
       <ResponsiveContainer width="100%" height="90%">
-        <ComposedChart data={transformedData} margin={{ top: 20, right: 10, left: 0, bottom: 20 }}>
+        <ComposedChart data={transformedData} margin={{ top: 30, right: 10, left: 0, bottom: 20 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
           
           <XAxis 
@@ -149,7 +191,7 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
           />
           
           <YAxis 
-            domain={[0, 100]} 
+            domain={[0, 'auto']} 
             tick={{fontSize: 10, fill: '#6b7280'}}
             axisLine={false}
             tickLine={false}
@@ -183,7 +225,17 @@ const LifeKLineChart: React.FC<LifeKLineChartProps> = ({ data }) => {
             shape={<CandleShape />} 
             isAnimationActive={true}
             animationDuration={1500}
-          />
+          >
+            {/* 
+              Only show label for the global Peak 
+              We pass the computed maxHigh to the custom label component
+            */}
+             <LabelList 
+              dataKey="high" 
+              position="top" 
+              content={<PeakLabel maxHigh={maxHigh} />}
+            />
+          </Bar>
           
         </ComposedChart>
       </ResponsiveContainer>
