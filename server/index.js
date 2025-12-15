@@ -526,6 +526,6 @@ const distDir = path.join(__dirname, '..', 'dist');
 app.use(express.static(distDir));
 app.get('*', (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
 
-app.listen(PORT, () => {
-  process.stdout.write(`server listening on ${PORT}\n`);
+app.listen(PORT, '0.0.0.0', () => {
+  process.stdout.write(`server listening on 0.0.0.0:${PORT}\n`);
 });
