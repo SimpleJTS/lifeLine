@@ -1,4 +1,4 @@
-import React, { useState, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import BaziForm from './components/BaziForm';
 import RegisterModal from './components/RegisterModal';
 import { UserInput, LifeDestinyResult } from './types';
@@ -7,6 +7,7 @@ import { API_STATUS } from './constants';
 import { useAuth } from './hooks/useAuth';
 import { useLocalHistory } from './hooks/useLocalHistory';
 import { exportAsHtml } from './utils/exportUtils';
+import { initDebugListeners } from './utils/debugUtils';
 import { Sparkles, AlertCircle, Download, Twitter, Printer, Trophy, Loader2, User, Coins } from 'lucide-react';
 
 // 懒加载重型组件
@@ -37,6 +38,11 @@ const App: React.FC = () => {
   const [currentInput, setCurrentInput] = useState<UserInput | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+
+  // 初始化调试监听器
+  useEffect(() => {
+    initDebugListeners();
+  }, []);
 
   // 从历史记录加载结果
   const handleHistorySelect = (historyResult: LifeDestinyResult, historyInput: UserInput) => {
